@@ -1,0 +1,58 @@
+services:
+  app:
+    build: backend
+    ports:
+      - "8080:8000"
+    environment:
+      SQS_QUEUE_URL: http://sqs:9324/queue/events
+      DB_HOST: db
+      DB_NAME: eventsdb
+      DB_USER: events_user
+      DB_PASSWORD: events_pass
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      db:
+        condition: service_healthy
+      sqs:
+        condition: service_started
+      sqs-setup:
+        condition: service_completed_successfully
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: eventsdb
+      POSTGRES_USER: events_user
+      POSTGRES_PASSWORD: events_pass
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U events_user -d eventsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  sqs:
+    image: softwaremill/elasticmq-native:1.6.0
+    ports:
+      - "9324:9324"
+
+  sqs-setup:
+    image: amazon/aws-cli:latest
+    depends_on:
+      sqs:
+        condition: service_started
+    entrypoint: [""]
+    command:
+      - /bin/sh
+      - -c
+      - |
+        sleep 3
+        aws --endpoint-url http://sqs:9324 sqs create-queue --queue-name events 2>/dev/null || true
+        echo "Queue ready"
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
